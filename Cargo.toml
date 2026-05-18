@@ -1,0 +1,35 @@
+[package]
+name = "mobile-money-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web Framework
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database
+diesel = { version = "2.2", features = ["postgres", "uuid", "chrono", "numeric"] }
+diesel-async = { version = "0.5", features = ["postgres", "bb8"] }
+futures-util = { version = "0.3", features = ["alloc", "sink", "async-await", "async-await-macro"] }
+diesel_migrations = "2.2"
+
+# Data Types
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+bigdecimal = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utils
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+regex = "1.10"
+anyhow = "1.0"
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid", "decimal"] }
+validator = { version = "0.18", features = ["derive"] }
+utoipa-swagger-ui = { version = "7.1", features = ["axum"] }

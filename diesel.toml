@@ -1,0 +1,6 @@
+[print_schema]
+file = "src/schema.rs"
+custom_type_derives = ["serde::Serialize", "serde::Deserialize"]
+
+[migrations_directory]
+dir = "migrations"

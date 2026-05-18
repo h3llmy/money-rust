@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS notification_inbox;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS pockets;
+DROP TABLE IF EXISTS categories;
+DROP EXTENSION IF EXISTS "uuid-ossp";
