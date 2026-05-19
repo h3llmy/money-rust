@@ -19,21 +19,32 @@ impl TransactionService {
 
     pub async fn list_transactions(
         &self,
+        user_id: Uuid,
         pocket_id: Option<Uuid>,
         start_date: Option<DateTime<Utc>>,
         end_date: Option<DateTime<Utc>>,
         type_: Option<String>,
         pagination: PaginationQuery,
     ) -> Result<(Vec<Transaction>, u64), String> {
-        self.repo.find_all(pocket_id, start_date, end_date, type_, pagination).await
+        self.repo.find_all(user_id, pocket_id, start_date, end_date, type_, pagination).await
     }
 
-    pub async fn get_transaction_by_id(&self, id: Uuid) -> Result<Option<Transaction>, String> {
-        self.repo.find_by_id(id).await
+    pub async fn get_transaction_by_id(&self, id: Uuid, user_id: Uuid) -> Result<Option<Transaction>, String> {
+        let tx = self.repo.find_by_id(id).await?;
+        if let Some(t) = tx {
+            let pocket = self.pocket_repo.find_by_id(t.pocket_id).await?;
+            if let Some(p) = pocket {
+                if p.user_id == user_id {
+                    return Ok(Some(t));
+                }
+            }
+        }
+        Ok(None)
     }
 
     pub async fn create_transaction(
         &self,
+        user_id: Uuid,
         pocket_id: Uuid,
         category_id: Option<Uuid>,
         amount: BigDecimal,
@@ -44,8 +55,25 @@ impl TransactionService {
         description: Option<String>,
         status: String,
     ) -> Result<Transaction, String> {
+        let pocket = self.pocket_repo.find_by_id(pocket_id).await?
+            .ok_or_else(|| "Pocket not found".to_string())?;
+        if pocket.user_id != user_id {
+            return Err("Unauthorized pocket access".to_string());
+        }
+
+        if type_ == "transfer" {
+            if let Some(dest_id) = destination_pocket_id {
+                let dest_pocket = self.pocket_repo.find_by_id(dest_id).await?
+                    .ok_or_else(|| "Destination pocket not found".to_string())?;
+                if dest_pocket.user_id != user_id {
+                    return Err("Unauthorized destination pocket access".to_string());
+                }
+            }
+        }
+
         let transaction = Transaction {
             id: Uuid::new_v4(),
+            user_id,
             pocket_id,
             category_id,
             amount: amount.clone(),
@@ -79,9 +107,15 @@ impl TransactionService {
         Ok(saved)
     }
 
-    pub async fn void_transaction(&self, id: Uuid) -> Result<(), String> {
+    pub async fn void_transaction(&self, id: Uuid, user_id: Uuid) -> Result<(), String> {
         let transaction = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Transaction not found".to_string())?;
+
+        let pocket = self.pocket_repo.find_by_id(transaction.pocket_id).await?
+            .ok_or_else(|| "Pocket not found".to_string())?;
+        if pocket.user_id != user_id {
+            return Err("Unauthorized transaction access".to_string());
+        }
 
         if transaction.status != "rejected" {
             let reverse_amount = match transaction.type_.as_str() {
@@ -106,6 +140,7 @@ impl TransactionService {
     pub async fn update_transaction(
         &self,
         id: Uuid,
+        user_id: Uuid,
         pocket_id: Uuid,
         category_id: Option<Uuid>,
         amount: BigDecimal,
@@ -118,6 +153,28 @@ impl TransactionService {
     ) -> Result<Transaction, String> {
         let old_tx = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Transaction not found".to_string())?;
+
+        let old_pocket = self.pocket_repo.find_by_id(old_tx.pocket_id).await?
+            .ok_or_else(|| "Original pocket not found".to_string())?;
+        if old_pocket.user_id != user_id {
+            return Err("Unauthorized pocket access".to_string());
+        }
+
+        let new_pocket = self.pocket_repo.find_by_id(pocket_id).await?
+            .ok_or_else(|| "Pocket not found".to_string())?;
+        if new_pocket.user_id != user_id {
+            return Err("Unauthorized pocket access".to_string());
+        }
+
+        if type_ == "transfer" {
+            if let Some(dest_id) = destination_pocket_id {
+                let dest_pocket = self.pocket_repo.find_by_id(dest_id).await?
+                    .ok_or_else(|| "Destination pocket not found".to_string())?;
+                if dest_pocket.user_id != user_id {
+                    return Err("Unauthorized destination pocket access".to_string());
+                }
+            }
+        }
 
         let target_status = status.unwrap_or_else(|| old_tx.status.clone());
 
@@ -156,6 +213,7 @@ impl TransactionService {
         // 3. Save the updated transaction
         let updated_tx = Transaction {
             id,
+            user_id,
             pocket_id,
             category_id,
             amount,
@@ -173,6 +231,7 @@ impl TransactionService {
     pub async fn resolve_transaction(
         &self,
         id: Uuid,
+        user_id: Uuid,
         pocket_id: Option<Uuid>,
         category_id: Option<Uuid>,
         amount: Option<BigDecimal>,
@@ -184,8 +243,30 @@ impl TransactionService {
         let mut tx = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Transaction not found".to_string())?;
 
+        let pocket = self.pocket_repo.find_by_id(tx.pocket_id).await?
+            .ok_or_else(|| "Pocket not found".to_string())?;
+        if pocket.user_id != user_id {
+            return Err("Unauthorized transaction access".to_string());
+        }
+
         if tx.status != "pending" {
             return Err("Transaction is not pending".to_string());
+        }
+
+        if let Some(pid) = pocket_id {
+            let new_pocket = self.pocket_repo.find_by_id(pid).await?
+                .ok_or_else(|| "Pocket not found".to_string())?;
+            if new_pocket.user_id != user_id {
+                return Err("Unauthorized pocket access".to_string());
+            }
+        }
+
+        if let Some(dest_id) = destination_pocket_id {
+            let dest_pocket = self.pocket_repo.find_by_id(dest_id).await?
+                .ok_or_else(|| "Destination pocket not found".to_string())?;
+            if dest_pocket.user_id != user_id {
+                return Err("Unauthorized destination pocket access".to_string());
+            }
         }
 
         // 1. Revert the old (pending) transaction's pocket balance effects
@@ -245,9 +326,15 @@ impl TransactionService {
         self.repo.save(tx).await
     }
 
-    pub async fn reject_transaction(&self, id: Uuid) -> Result<Transaction, String> {
+    pub async fn reject_transaction(&self, id: Uuid, user_id: Uuid) -> Result<Transaction, String> {
         let mut tx = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Transaction not found".to_string())?;
+
+        let pocket = self.pocket_repo.find_by_id(tx.pocket_id).await?
+            .ok_or_else(|| "Pocket not found".to_string())?;
+        if pocket.user_id != user_id {
+            return Err("Unauthorized transaction access".to_string());
+        }
 
         if tx.status != "pending" {
             return Err("Transaction is not pending".to_string());

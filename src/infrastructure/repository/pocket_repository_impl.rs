@@ -23,11 +23,11 @@ impl DieselPocketRepository {
 
 #[async_trait]
 impl PocketRepository for DieselPocketRepository {
-    async fn find_all(&self, pagination: PaginationQuery) -> Result<(Vec<Pocket>, u64), String> {
+    async fn find_all(&self, user_id: Uuid, pagination: PaginationQuery) -> Result<(Vec<Pocket>, u64), String> {
         let mut conn = self.pool.get().await.map_err(|e| e.to_string())?;
         
-        let mut count_query = pockets::table.into_boxed();
-        let mut list_query = pockets::table.into_boxed();
+        let mut count_query = pockets::table.filter(pockets::user_id.eq(user_id)).into_boxed();
+        let mut list_query = pockets::table.filter(pockets::user_id.eq(user_id)).into_boxed();
         
         if let Some(search) = pagination.get_search() {
             let pattern = format!("%{}%", search);
@@ -67,7 +67,7 @@ impl PocketRepository for DieselPocketRepository {
         let mut conn = self.pool.get().await.map_err(|e| e.to_string())?;
         let db_model = PocketDb {
             id: pocket.id,
-            user_id: pocket._user_id,
+            user_id: pocket.user_id,
             name: pocket.name,
             pocket_type: pocket._pocket_type,
             currency: pocket.currency,
@@ -117,7 +117,7 @@ impl PocketRepository for DieselPocketRepository {
 fn map_db_to_domain(db: PocketDb) -> Pocket {
     Pocket {
         id: db.id,
-        _user_id: db.user_id,
+        user_id: db.user_id,
         name: db.name,
         _pocket_type: db.pocket_type,
         currency: db.currency,

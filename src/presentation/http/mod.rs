@@ -11,6 +11,7 @@ use crate::domain::pockets::dto::*;
 use crate::domain::categories::dto::*;
 use crate::domain::transactions::dto::*;
 use crate::domain::notifications::dto::*;
+use crate::domain::auth::dto::*;
 use crate::shared::response::*;
 use crate::shared::pagination::*;
 
@@ -35,6 +36,9 @@ use crate::shared::pagination::*;
         handlers::transactions::reject_transaction,
         handlers::notifications::list_unresolved,
         handlers::notifications::sync_inbox,
+        handlers::auth::register,
+        handlers::auth::login,
+        handlers::auth::get_me,
     ),
     components(
         schemas(
@@ -44,24 +48,47 @@ use crate::shared::pagination::*;
             CreateNotificationRequest, NotificationResponse,
             StringApiResponse, PocketApiResponse, CategoryApiResponse, TransactionApiResponse, NotificationApiResponse,
             PocketPaginationResponse, CategoryPaginationResponse, TransactionPaginationResponse, NotificationPaginationResponse,
-            PaginationQuery, SortOrder
+            PaginationQuery, SortOrder,
+            RegisterRequest, LoginRequest, AuthResponse, UserResponse
         )
     ),
+    modifiers(&SecurityAddon),
     tags(
         (name = "Pockets", description = "Pocket management endpoints"),
         (name = "Categories", description = "Category management endpoints"),
         (name = "Transactions", description = "Transaction management endpoints"),
-        (name = "Inbox", description = "Notification inbox endpoints")
+        (name = "Inbox", description = "Notification inbox endpoints"),
+        (name = "Auth", description = "Authentication endpoints"),
+        (name = "Users", description = "User management endpoints")
     )
 )]
 struct ApiDoc;
+
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.as_mut().unwrap();
+        components.add_security_scheme(
+            "BearerAuth",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+}
 
 pub fn create_router(state: Arc<AppState>) -> Router {
     let api_v1 = Router::new()
         .nest("/pockets", handlers::pockets::routes())
         .nest("/categories", handlers::categories::routes())
         .nest("/transactions", handlers::transactions::routes())
-        .nest("/inbox", handlers::notifications::routes());
+        .nest("/inbox", handlers::notifications::routes())
+        .nest("/auth", handlers::auth::auth_routes())
+        .nest("/users", handlers::auth::user_routes());
 
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -70,3 +97,4 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .layer(TraceLayer::new_for_http()) // Add HTTP request/response logging
         .with_state(state)
 }
+

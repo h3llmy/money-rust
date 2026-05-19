@@ -8,6 +8,7 @@ pub struct Config {
     pub ai_provider: String,
     pub gemini_api_key: String,
     pub gemini_model: String,
+    pub jwt_secret: String,
 }
 
 pub enum AppEnvironment {
@@ -52,6 +53,9 @@ impl Config {
         let gemini_model = std::env::var("GEMINI_MODEL")
             .unwrap_or_else(|_| "gemini-1.5-flash".to_string());
 
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "super_secret_mobile_money_key_123456789".to_string());
+
         Self {
             database_url,
             server_port,
@@ -62,6 +66,7 @@ impl Config {
             ai_provider,
             gemini_api_key,
             gemini_model,
+            jwt_secret,
         }
     }
 }

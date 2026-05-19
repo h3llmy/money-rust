@@ -9,6 +9,7 @@ pub mod pocket_repository_impl;
 pub mod notification_repository_impl;
 pub mod category_repository_impl;
 pub mod transaction_repository_impl;
+pub mod auth_repository_impl;
 
 // Pocket DB Model
 #[derive(Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug)]
@@ -38,6 +39,7 @@ pub struct CategoryDb {
 #[diesel(table_name = transactions)]
 pub struct TransactionDb {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub pocket_id: Uuid,
     pub category_id: Option<Uuid>,
     pub amount: BigDecimal,
@@ -47,6 +49,18 @@ pub struct TransactionDb {
     pub destination_pocket_id: Option<Uuid>,
     pub description: Option<String>,
     pub status: String,
+}
+
+// User DB Model
+#[derive(Queryable, Selectable, Insertable, AsChangeset, Serialize, Deserialize, Debug)]
+#[diesel(table_name = users)]
+pub struct UserDb {
+    pub id: Uuid,
+    pub email: String,
+    pub password_hash: String,
+    pub username: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 

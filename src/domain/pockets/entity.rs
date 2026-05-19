@@ -4,7 +4,7 @@ use bigdecimal::BigDecimal;
 
 pub struct Pocket {
     pub id: Uuid,
-    pub _user_id: Uuid,
+    pub user_id: Uuid,
     pub name: String,
     pub _pocket_type: String,
     pub currency: String,

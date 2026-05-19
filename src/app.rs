@@ -6,6 +6,7 @@ use crate::infrastructure::repository::{
     notification_repository_impl::InMemoryNotificationRepository,
     category_repository_impl::DieselCategoryRepository,
     transaction_repository_impl::DieselTransactionRepository,
+    auth_repository_impl::DieselAuthRepository,
 };
 use crate::infrastructure::ai::ollama_client::OllamaClient;
 use crate::infrastructure::ai::gemini_client::GeminiClient;
@@ -13,6 +14,7 @@ use crate::domain::pockets::service::PocketService;
 use crate::domain::notifications::service::NotificationService;
 use crate::domain::categories::service::CategoryService;
 use crate::domain::transactions::service::TransactionService;
+use crate::domain::auth::service::AuthService;
 use crate::shared::app_state::AppState;
 use crate::presentation::http::create_router;
 
@@ -41,6 +43,7 @@ pub async fn run(config: Config) {
     let notification_repo = Arc::new(InMemoryNotificationRepository::new());
     let category_repo = Arc::new(DieselCategoryRepository::new(pool.clone()));
     let transaction_repo = Arc::new(DieselTransactionRepository::new(pool.clone()));
+    let auth_repo = Arc::new(DieselAuthRepository::new(pool.clone()));
 
     // Services
     let pocket_service = Arc::new(PocketService::new(pocket_repo.clone()));
@@ -53,12 +56,15 @@ pub async fn run(config: Config) {
         transaction_service.clone(),
         ai_client,
     ));
+    let auth_service = Arc::new(AuthService::new(auth_repo.clone(), config.jwt_secret.clone()));
 
     let state = Arc::new(AppState {
         pocket_service,
         notification_service,
         category_service,
         transaction_service,
+        auth_service,
+        jwt_secret: config.jwt_secret.clone(),
     });
 
     let app = create_router(state);
@@ -69,3 +75,4 @@ pub async fn run(config: Config) {
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
+

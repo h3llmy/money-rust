@@ -24,6 +24,7 @@ impl DieselTransactionRepository {
 impl TransactionRepository for DieselTransactionRepository {
     async fn find_all(
         &self, 
+        user_id: Uuid,
         pocket_id: Option<Uuid>, 
         start_date: Option<DateTime<Utc>>, 
         end_date: Option<DateTime<Utc>>, 
@@ -36,6 +37,7 @@ impl TransactionRepository for DieselTransactionRepository {
         macro_rules! apply_filters {
             ($query:expr) => {{
                 let mut q = $query;
+                q = q.filter(transactions::user_id.eq(user_id));
                 if let Some(pid) = pocket_id {
                     q = q.filter(transactions::pocket_id.eq(pid).or(transactions::destination_pocket_id.eq(pid)));
                 }
@@ -97,6 +99,7 @@ impl TransactionRepository for DieselTransactionRepository {
         let mut conn = self.pool.get().await.map_err(|e| e.to_string())?;
         let db_model = TransactionDb {
             id: transaction.id,
+            user_id: transaction.user_id,
             pocket_id: transaction.pocket_id,
             category_id: transaction.category_id,
             amount: transaction.amount,
@@ -134,6 +137,7 @@ impl TransactionRepository for DieselTransactionRepository {
 fn map_db_to_domain(db: TransactionDb) -> Transaction {
     Transaction {
         id: db.id,
+        user_id: db.user_id,
         pocket_id: db.pocket_id,
         category_id: db.category_id,
         amount: db.amount,

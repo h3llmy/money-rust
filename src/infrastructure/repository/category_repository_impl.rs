@@ -21,11 +21,11 @@ impl DieselCategoryRepository {
 
 #[async_trait]
 impl CategoryRepository for DieselCategoryRepository {
-    async fn find_all(&self, pagination: PaginationQuery) -> Result<(Vec<Category>, u64), String> {
+    async fn find_all(&self, user_id: Uuid, pagination: PaginationQuery) -> Result<(Vec<Category>, u64), String> {
         let mut conn = self.pool.get().await.map_err(|e| e.to_string())?;
         
-        let mut count_query = categories::table.into_boxed();
-        let mut list_query = categories::table.into_boxed();
+        let mut count_query = categories::table.filter(categories::user_id.is_null().or(categories::user_id.eq(user_id))).into_boxed();
+        let mut list_query = categories::table.filter(categories::user_id.is_null().or(categories::user_id.eq(user_id))).into_boxed();
         
         if let Some(search) = pagination.get_search() {
             let pattern = format!("%{}%", search);

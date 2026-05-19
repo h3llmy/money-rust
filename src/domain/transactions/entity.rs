@@ -4,6 +4,7 @@ use bigdecimal::BigDecimal;
 
 pub struct Transaction {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub pocket_id: Uuid,
     pub category_id: Option<Uuid>,
     pub amount: BigDecimal,

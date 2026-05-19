@@ -34,14 +34,14 @@ impl NotificationService {
         }
     }
 
-    pub async fn list_unresolved(&self, pagination: PaginationQuery) -> Result<(Vec<NotificationInbox>, u64), String> {
-        self.repo.find_unresolved(pagination).await
+    pub async fn list_unresolved(&self, user_id: Uuid, pagination: PaginationQuery) -> Result<(Vec<NotificationInbox>, u64), String> {
+        self.repo.find_unresolved(user_id, pagination).await
     }
 
-    pub async fn ingest_sync(&self, notifications: Vec<NotificationInbox>) -> Result<(), String> {
+    pub async fn ingest_sync(&self, user_id: Uuid, notifications: Vec<NotificationInbox>) -> Result<(), String> {
         let full_page = PaginationQuery { limit: Some(1000), ..Default::default() };
-        let (pockets, _) = self.pocket_repo.find_all(full_page.clone()).await?;
-        let (categories, _) = self.category_repo.find_all(full_page).await?;
+        let (pockets, _) = self.pocket_repo.find_all(user_id, full_page.clone()).await?;
+        let (categories, _) = self.category_repo.find_all(user_id, full_page).await?;
 
         for mut n in notifications {
             let title = n.raw_title.as_deref().unwrap_or("");
@@ -144,6 +144,7 @@ impl NotificationService {
                     .unwrap_or_else(|| "Notification Transaction".to_string());
 
                 let tx = self.transaction_service.create_transaction(
+                    user_id,
                     final_pocket_id,
                     category_id,
                     final_amount,
@@ -166,9 +167,13 @@ impl NotificationService {
         Ok(())
     }
 
-    pub async fn process_notification(&self, id: Uuid) -> Result<(), String> {
+    pub async fn process_notification(&self, user_id: Uuid, id: Uuid) -> Result<(), String> {
         let notification = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Notification not found".to_string())?;
+
+        if notification.user_id != user_id {
+            return Err("Unauthorized notification access".to_string());
+        }
 
         tracing::debug!("Processing notification {} with AI", id);
         
@@ -186,8 +191,8 @@ impl NotificationService {
                 }
 
                 let full_page = PaginationQuery { limit: Some(100), ..Default::default() };
-                let (pockets, _) = self.pocket_repo.find_all(full_page.clone()).await?;
-                let (categories, _) = self.category_repo.find_all(full_page).await?;
+                let (pockets, _) = self.pocket_repo.find_all(user_id, full_page.clone()).await?;
+                let (categories, _) = self.category_repo.find_all(user_id, full_page).await?;
 
                 if pockets.is_empty() {
                     tracing::warn!("No pockets found. Skipping transaction creation for notification {}", id);
@@ -227,6 +232,7 @@ impl NotificationService {
                 let time_window_end = notification.received_at + chrono::Duration::try_days(1).unwrap_or_else(|| chrono::Duration::days(1));
                 
                 let (existing_txs, _) = self.transaction_service.list_transactions(
+                    user_id,
                     Some(pocket_id),
                     Some(time_window_start),
                     Some(time_window_end),
@@ -256,6 +262,7 @@ impl NotificationService {
                 }
                 
                 let tx = self.transaction_service.create_transaction(
+                    user_id,
                     pocket_id,
                     category_id,
                     amount,

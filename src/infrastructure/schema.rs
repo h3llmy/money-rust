@@ -16,24 +16,16 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
 
-    notification_inbox (id) {
+    users (id) {
         id -> Uuid,
-        #[max_length = 150]
-        app_package -> Varchar,
-        raw_title -> Nullable<Text>,
-        raw_body -> Text,
-        received_at -> Timestamptz,
-        #[max_length = 20]
-        status -> Varchar,
-        transaction_id -> Nullable<Uuid>,
-        amount -> Nullable<Numeric>,
-        #[sql_name = "type"]
-        type_ -> Nullable<Varchar>,
-        pocket_id -> Nullable<Uuid>,
-        category_id -> Nullable<Uuid>,
-        destination_pocket_id -> Nullable<Uuid>,
         #[max_length = 255]
-        title -> Nullable<Varchar>,
+        email -> Varchar,
+        #[max_length = 255]
+        password_hash -> Varchar,
+        #[max_length = 100]
+        username -> Varchar,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -59,6 +51,7 @@ diesel::table! {
 
     transactions (id) {
         id -> Uuid,
+        user_id -> Uuid,
         pocket_id -> Uuid,
         category_id -> Nullable<Uuid>,
         amount -> Numeric,
@@ -73,12 +66,12 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(notification_inbox -> transactions (transaction_id));
+
 diesel::joinable!(transactions -> categories (category_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
-    notification_inbox,
     pockets,
     transactions,
+    users,
 );

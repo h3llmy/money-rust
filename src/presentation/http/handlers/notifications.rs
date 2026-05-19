@@ -1,5 +1,6 @@
 use axum::{extract::{State, Query}, Json, http::StatusCode};
 use crate::shared::app_state::AppState;
+use crate::shared::auth::AuthUser;
 use crate::domain::notifications::dto::{CreateNotificationRequest, NotificationResponse};
 use crate::domain::notifications::entity::{NotificationInbox, NotificationStatus};
 use crate::shared::pagination::PaginationQuery;
@@ -15,14 +16,18 @@ use chrono::Utc;
     responses(
         (status = 200, description = "List notifications", body = NotificationPaginationResponse)
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Inbox"
 )]
 pub async fn list_unresolved(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<Json<PaginationResponse<Vec<NotificationResponse>>>, (StatusCode, String)> {
     let (data, total) = state.notification_service
-        .list_unresolved(pagination.clone())
+        .list_unresolved(auth_user.id, pagination.clone())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -43,15 +48,20 @@ pub async fn list_unresolved(
     responses(
         (status = 202, description = "Notifications synced successfully")
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Inbox"
 )]
 pub async fn sync_inbox(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Json(payload): Json<Vec<CreateNotificationRequest>>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     tracing::info!("Syncing inbox: {:?}", payload);
     let notifications = payload.into_iter().map(|p| NotificationInbox {
         id: Uuid::new_v4(),
+        user_id: auth_user.id,
         app_package: p.app_package,
         raw_title: p.raw_title,
         raw_body: p.raw_body,
@@ -67,7 +77,7 @@ pub async fn sync_inbox(
     }).collect();
 
     state.notification_service
-        .ingest_sync(notifications)
+        .ingest_sync(auth_user.id, notifications)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 

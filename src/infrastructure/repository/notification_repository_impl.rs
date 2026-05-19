@@ -19,10 +19,11 @@ impl InMemoryNotificationRepository {
 
 #[async_trait]
 impl NotificationRepository for InMemoryNotificationRepository {
-    async fn find_unresolved(&self, pagination: PaginationQuery) -> Result<(Vec<NotificationInbox>, u64), String> {
+    async fn find_unresolved(&self, user_id: Uuid, pagination: PaginationQuery) -> Result<(Vec<NotificationInbox>, u64), String> {
         let n_list = self.notifications.read().map_err(|e| e.to_string())?;
         
         let filtered: Vec<NotificationInbox> = n_list.iter()
+            .filter(|n| n.user_id == user_id)
             .filter(|n| {
                 let is_processed = matches!(n.status, NotificationStatus::Processed);
                 let is_ignored = matches!(n.status, NotificationStatus::Ignored);

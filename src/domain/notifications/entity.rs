@@ -5,6 +5,7 @@ use bigdecimal::BigDecimal;
 #[derive(Clone, Debug)]
 pub struct NotificationInbox {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub app_package: String,
     pub raw_title: Option<String>,
     pub raw_body: String,

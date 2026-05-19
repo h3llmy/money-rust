@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 pub trait TransactionRepository: Send + Sync {
     async fn find_all(
         &self, 
+        user_id: Uuid,
         pocket_id: Option<Uuid>, 
         start_date: Option<DateTime<Utc>>, 
         end_date: Option<DateTime<Utc>>, 

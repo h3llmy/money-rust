@@ -1,5 +1,6 @@
 use axum::{extract::{State, Path, Query}, Json, http::StatusCode};
 use crate::shared::app_state::AppState;
+use crate::shared::auth::AuthUser;
 use crate::domain::transactions::dto::{TransactionResponse, CreateTransactionRequest, UpdateTransactionRequest, TransactionFilter, ResolveTransactionRequest};
 use crate::shared::response::{ApiResponse, PaginationResponse};
 use std::sync::Arc;
@@ -17,10 +18,14 @@ use crate::shared::pagination::PaginationQuery;
     responses(
         (status = 200, description = "List all transactions", body = TransactionPaginationResponse)
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn list_transactions(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Query(filter): Query<TransactionFilter>,
 ) -> Result<Json<PaginationResponse<Vec<TransactionResponse>>>, (StatusCode, String)> {
     let pagination = PaginationQuery {
@@ -33,6 +38,7 @@ pub async fn list_transactions(
 
     let (data, total) = state.transaction_service
         .list_transactions(
+            auth_user.id,
             filter.pocket_id, 
             filter.start_date, 
             filter.end_date, 
@@ -44,12 +50,12 @@ pub async fn list_transactions(
 
     // Batch fetch pockets and categories to populate relations
     let (pockets_list, _) = state.pocket_service
-        .list_all_pockets(PaginationQuery { page: Some(1), limit: Some(1000), ..Default::default() })
+        .list_all_pockets(auth_user.id, PaginationQuery { page: Some(1), limit: Some(1000), ..Default::default() })
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let (categories_list, _) = state.category_service
-        .list_categories(PaginationQuery { page: Some(1), limit: Some(1000), ..Default::default() })
+        .list_categories(auth_user.id, PaginationQuery { page: Some(1), limit: Some(1000), ..Default::default() })
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -103,10 +109,14 @@ pub async fn list_transactions(
     responses(
         (status = 200, description = "Create a new transaction", body = TransactionApiResponse)
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn create_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Json(payload): Json<CreateTransactionRequest>,
 ) -> Result<Json<ApiResponse<TransactionResponse>>, (StatusCode, String)> {
     use std::str::FromStr;
@@ -115,6 +125,7 @@ pub async fn create_transaction(
 
     let result = state.transaction_service
         .create_transaction(
+            auth_user.id,
             payload.pocket_id,
             payload.category_id,
             amount,
@@ -141,10 +152,14 @@ pub async fn create_transaction(
     responses(
         (status = 200, description = "Update a transaction", body = TransactionApiResponse)
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn update_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTransactionRequest>,
 ) -> Result<Json<ApiResponse<TransactionResponse>>, (StatusCode, String)> {
@@ -155,6 +170,7 @@ pub async fn update_transaction(
     let result = state.transaction_service
         .update_transaction(
             id,
+            auth_user.id,
             payload.pocket_id,
             payload.category_id,
             amount,
@@ -180,14 +196,18 @@ pub async fn update_transaction(
     responses(
         (status = 204, description = "Transaction voided successfully")
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn void_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     state.transaction_service
-        .void_transaction(id)
+        .void_transaction(id, auth_user.id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -204,20 +224,24 @@ pub async fn void_transaction(
         (status = 200, description = "Get transaction details", body = TransactionApiResponse),
         (status = 404, description = "Transaction not found")
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn get_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<TransactionResponse>>, (StatusCode, String)> {
     let t = state.transaction_service
-        .get_transaction_by_id(id)
+        .get_transaction_by_id(id, auth_user.id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Transaction not found".to_string()))?;
 
     let pocket = state.pocket_service
-        .get_pocket_by_id(t.pocket_id)
+        .get_pocket_by_id(t.pocket_id, auth_user.id)
         .await
         .ok()
         .flatten()
@@ -225,7 +249,7 @@ pub async fn get_transaction(
 
     let category = if let Some(cid) = t.category_id {
         state.category_service
-            .get_category_by_id(cid)
+            .get_category_by_id(cid, auth_user.id)
             .await
             .ok()
             .flatten()
@@ -236,7 +260,7 @@ pub async fn get_transaction(
 
     let destination_pocket = if let Some(dpid) = t.destination_pocket_id {
         state.pocket_service
-            .get_pocket_by_id(dpid)
+            .get_pocket_by_id(dpid, auth_user.id)
             .await
             .ok()
             .flatten()
@@ -265,10 +289,14 @@ pub async fn get_transaction(
         (status = 400, description = "Bad Request"),
         (status = 404, description = "Transaction not found")
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn resolve_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
     Json(payload): Json<ResolveTransactionRequest>,
 ) -> Result<Json<ApiResponse<TransactionResponse>>, (StatusCode, String)> {
@@ -285,6 +313,7 @@ pub async fn resolve_transaction(
     let result = state.transaction_service
         .resolve_transaction(
             id,
+            auth_user.id,
             payload.pocket_id,
             payload.category_id,
             amount,
@@ -310,14 +339,18 @@ pub async fn resolve_transaction(
         (status = 400, description = "Bad Request"),
         (status = 404, description = "Transaction not found")
     ),
+    security(
+        ("BearerAuth" = [])
+    ),
     tag = "Transactions"
 )]
 pub async fn reject_transaction(
     State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<TransactionResponse>>, (StatusCode, String)> {
     let result = state.transaction_service
-        .reject_transaction(id)
+        .reject_transaction(id, auth_user.id)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
