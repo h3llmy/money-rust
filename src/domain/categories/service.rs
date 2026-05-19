@@ -20,7 +20,7 @@ impl CategoryService {
     pub async fn get_category_by_id(&self, id: Uuid, user_id: Uuid) -> Result<Option<Category>, String> {
         let category = self.repo.find_by_id(id).await?;
         match category {
-            Some(c) if c.user_id.is_none() || c.user_id == Some(user_id) => Ok(Some(c)),
+            Some(c) if c.user_id == Some(user_id) => Ok(Some(c)),
             _ => Ok(None),
         }
     }
