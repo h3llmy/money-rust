@@ -35,6 +35,7 @@ pub async fn run(config: Config) {
     // Infrastructure
     let ai_client: Arc<dyn crate::infrastructure::ai::AiClient> = match config.ai_provider.to_lowercase().as_str() {
         "gemini" => Arc::new(GeminiClient::new(config.clone())),
+        "ollama" => Arc::new(OllamaClient::new(config.clone())),
         _ => Arc::new(OllamaClient::new(config.clone())),
     };
 
