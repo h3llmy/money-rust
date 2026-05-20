@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 pub struct AuthUser {
     pub id: Uuid,
+    #[allow(dead_code)]
     pub email: String,
 }
 

@@ -10,7 +10,9 @@ use uuid::Uuid;
 #[async_trait]
 pub trait NotificationRepository: Send + Sync {
     async fn find_unresolved(&self, user_id: Uuid, pagination: PaginationQuery) -> Result<(Vec<NotificationInbox>, u64), String>;
+    #[allow(dead_code)]
     async fn find_by_id(&self, id: Uuid) -> Result<Option<NotificationInbox>, String>;
     async fn save(&self, notification: NotificationInbox) -> Result<NotificationInbox, String>;
+    #[allow(dead_code)]
     async fn update_status(&self, id: Uuid, status: String, transaction_id: Option<Uuid>) -> Result<(), String>;
 }

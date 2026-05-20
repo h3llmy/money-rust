@@ -2,6 +2,7 @@ pub struct Config {
     pub database_url: String,
     pub server_port: u16,
     pub log_level: String,
+    #[allow(dead_code)]
     pub environment: AppEnvironment,
     pub ollama_host: String,
     pub ollama_model: String,
