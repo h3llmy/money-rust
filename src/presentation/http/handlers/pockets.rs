@@ -4,6 +4,7 @@ use crate::shared::auth::AuthUser;
 use crate::domain::pockets::dto::{PocketResponse, CreatePocketRequest, UpdatePocketRequest};
 use crate::shared::pagination::PaginationQuery;
 use crate::shared::response::{ApiResponse, PaginationResponse};
+use crate::shared::error::AppError;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -12,7 +13,9 @@ use uuid::Uuid;
     path = "/api/v1/pockets",
     params(PaginationQuery),
     responses(
-        (status = 200, description = "List all pockets", body = PocketPaginationResponse)
+        (status = 200, description = "List all pockets", body = PocketPaginationResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -23,7 +26,7 @@ pub async fn list_pockets(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Query(pagination): Query<PaginationQuery>,
-) -> Result<Json<PaginationResponse<Vec<PocketResponse>>>, (StatusCode, String)> {
+) -> Result<Json<PaginationResponse<Vec<PocketResponse>>>, AppError> {
     let (data, total) = state.pocket_service
         .list_all_pockets(auth_user.id, pagination.clone())
         .await
@@ -44,7 +47,10 @@ pub async fn list_pockets(
     path = "/api/v1/pockets",
     request_body = CreatePocketRequest,
     responses(
-        (status = 200, description = "Create a new pocket", body = PocketApiResponse)
+        (status = 200, description = "Create a new pocket", body = PocketApiResponse),
+        (status = 400, description = "Bad Request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -55,7 +61,7 @@ pub async fn create_pocket(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Json(payload): Json<CreatePocketRequest>,
-) -> Result<Json<ApiResponse<PocketResponse>>, (StatusCode, String)> {
+) -> Result<Json<ApiResponse<PocketResponse>>, AppError> {
     use std::str::FromStr;
     let balance = bigdecimal::BigDecimal::from_str(&payload.balance)
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid balance: {}", e)))?;
@@ -76,7 +82,9 @@ pub async fn create_pocket(
     ),
     responses(
         (status = 200, description = "Get pocket by ID", body = PocketApiResponse),
-        (status = 404, description = "Pocket not found")
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 404, description = "Pocket not found", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -87,7 +95,7 @@ pub async fn get_pocket(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<PocketResponse>>, (StatusCode, String)> {
+) -> Result<Json<ApiResponse<PocketResponse>>, AppError> {
     let result = state.pocket_service
         .get_pocket_by_id(id, auth_user.id)
         .await
@@ -105,7 +113,10 @@ pub async fn get_pocket(
     ),
     request_body = UpdatePocketRequest,
     responses(
-        (status = 200, description = "Update pocket", body = PocketApiResponse)
+        (status = 200, description = "Update pocket", body = PocketApiResponse),
+        (status = 400, description = "Bad Request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -117,7 +128,7 @@ pub async fn update_pocket(
     auth_user: AuthUser,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdatePocketRequest>,
-) -> Result<Json<ApiResponse<PocketResponse>>, (StatusCode, String)> {
+) -> Result<Json<ApiResponse<PocketResponse>>, AppError> {
     let result = state.pocket_service
         .update_pocket(id, auth_user.id, payload.name, payload.pocket_type)
         .await
@@ -133,7 +144,9 @@ pub async fn update_pocket(
         ("id" = Uuid, Path, description = "Pocket ID")
     ),
     responses(
-        (status = 204, description = "Pocket deleted successfully")
+        (status = 204, description = "Pocket deleted successfully"),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -144,7 +157,7 @@ pub async fn delete_pocket(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, AppError> {
     state.pocket_service
         .delete_pocket(id, auth_user.id)
         .await

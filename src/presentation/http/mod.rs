@@ -14,6 +14,7 @@ use crate::domain::notifications::dto::*;
 use crate::domain::auth::dto::*;
 use crate::shared::response::*;
 use crate::shared::pagination::*;
+use crate::shared::error::ErrorResponse;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -51,7 +52,8 @@ use crate::shared::pagination::*;
             StringApiResponse, PocketApiResponse, CategoryApiResponse, TransactionApiResponse, NotificationApiResponse,
             PocketPaginationResponse, CategoryPaginationResponse, TransactionPaginationResponse, NotificationPaginationResponse,
             PaginationQuery, SortOrder,
-            RegisterRequest, LoginRequest, AuthResponse, UserResponse
+            RegisterRequest, LoginRequest, AuthResponse, UserResponse,
+            ErrorResponse
         )
     ),
     modifiers(&SecurityAddon),

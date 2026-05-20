@@ -2,6 +2,7 @@ use axum::{extract::State, Json, http::StatusCode};
 use crate::shared::app_state::AppState;
 use crate::shared::auth::AuthUser;
 use crate::domain::auth::dto::{RegisterRequest, LoginRequest, AuthResponse, UserResponse};
+use crate::shared::error::AppError;
 use std::sync::Arc;
 use validator::Validate;
 
@@ -11,15 +12,15 @@ use validator::Validate;
     request_body = RegisterRequest,
     responses(
         (status = 200, description = "User registered successfully", body = AuthResponse),
-        (status = 400, description = "Invalid input or email already exists", body = String),
-        (status = 500, description = "Internal Server Error")
+        (status = 400, description = "Invalid input or email already exists", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     tag = "Auth"
 )]
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<Json<AuthResponse>, (StatusCode, String)> {
+) -> Result<Json<AuthResponse>, AppError> {
     payload.validate().map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     let res = state.auth_service
@@ -36,15 +37,15 @@ pub async fn register(
     request_body = LoginRequest,
     responses(
         (status = 200, description = "User logged in successfully", body = AuthResponse),
-        (status = 400, description = "Invalid credentials", body = String),
-        (status = 500, description = "Internal Server Error")
+        (status = 400, description = "Invalid credentials", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     tag = "Auth"
 )]
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, (StatusCode, String)> {
+) -> Result<Json<AuthResponse>, AppError> {
     payload.validate().map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     let res = state.auth_service
@@ -60,8 +61,8 @@ pub async fn login(
     path = "/api/v1/users/me",
     responses(
         (status = 200, description = "Get current user profile", body = UserResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 500, description = "Internal Server Error")
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     tag = "Users",
     security(
@@ -71,7 +72,7 @@ pub async fn login(
 pub async fn get_me(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
-) -> Result<Json<UserResponse>, (StatusCode, String)> {
+) -> Result<Json<UserResponse>, AppError> {
     let user = state.auth_service
         .get_user_by_id(auth_user.id)
         .await

@@ -5,6 +5,7 @@ use crate::domain::notifications::dto::{CreateNotificationRequest, NotificationR
 use crate::domain::notifications::entity::{NotificationInbox, NotificationStatus};
 use crate::shared::pagination::PaginationQuery;
 use crate::shared::response::PaginationResponse;
+use crate::shared::error::AppError;
 use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;
@@ -14,7 +15,9 @@ use chrono::Utc;
     path = "/api/v1/inbox",
     params(PaginationQuery),
     responses(
-        (status = 200, description = "List notifications", body = NotificationPaginationResponse)
+        (status = 200, description = "List notifications", body = NotificationPaginationResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -25,7 +28,7 @@ pub async fn list_unresolved(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Query(pagination): Query<PaginationQuery>,
-) -> Result<Json<PaginationResponse<Vec<NotificationResponse>>>, (StatusCode, String)> {
+) -> Result<Json<PaginationResponse<Vec<NotificationResponse>>>, AppError> {
     let (data, total) = state.notification_service
         .list_unresolved(auth_user.id, pagination.clone())
         .await
@@ -46,7 +49,10 @@ pub async fn list_unresolved(
     path = "/api/v1/inbox/sync",
     request_body = Vec<CreateNotificationRequest>,
     responses(
-        (status = 202, description = "Notifications synced successfully")
+        (status = 202, description = "Notifications synced successfully"),
+        (status = 400, description = "Bad Request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
     security(
         ("BearerAuth" = [])
@@ -57,7 +63,7 @@ pub async fn sync_inbox(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Json(payload): Json<Vec<CreateNotificationRequest>>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, AppError> {
     tracing::info!("Syncing inbox: {:?}", payload);
     let notifications = payload.into_iter().map(|p| NotificationInbox {
         id: Uuid::new_v4(),
