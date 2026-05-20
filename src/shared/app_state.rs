@@ -11,6 +11,7 @@ pub struct AppState {
     pub category_service: Arc<CategoryService>,
     pub transaction_service: Arc<TransactionService>,
     pub auth_service: Arc<AuthService>,
+    pub ai_client: Arc<dyn crate::infrastructure::ai::AiClient>,
     pub jwt_secret: String,
 }
 

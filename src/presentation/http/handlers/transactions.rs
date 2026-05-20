@@ -357,12 +357,70 @@ pub async fn reject_transaction(
     Ok(Json(ApiResponse { data: TransactionResponse::from(result) }))
 }
 
+use crate::domain::transactions::dto::{AiAnalyzeRequest, AiAnalyzeResponse};
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/transactions/ai-analyze",
+    request_body = AiAnalyzeRequest,
+    responses(
+        (status = 200, description = "Perform AI transaction analysis", body = AiAnalyzeResponse),
+        (status = 400, description = "Bad Request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 502, description = "Bad Gateway")
+    ),
+    security(
+        ("BearerAuth" = [])
+    ),
+    tag = "Transactions"
+)]
+pub async fn ai_analyze(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Json(payload): Json<AiAnalyzeRequest>,
+) -> Result<Json<AiAnalyzeResponse>, (StatusCode, String)> {
+    let pagination = PaginationQuery {
+        page: Some(1),
+        limit: Some(200), // Get up to 200 transactions
+        search: None,
+        sort: None,
+        sort_order: None,
+    };
+
+    let (data, _) = state.transaction_service
+        .list_transactions(
+            auth_user.id,
+            None,
+            None,
+            None,
+            None,
+            pagination
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    let response_data = data.into_iter()
+        .map(TransactionResponse::from)
+        .collect::<Vec<_>>();
+
+    let transactions_json = serde_json::to_string_pretty(&response_data)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let analysis = state.ai_client
+        .analyze_transactions(&transactions_json, payload.query.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+
+    Ok(Json(AiAnalyzeResponse { analysis }))
+}
+
 use axum::routing::get;
 use axum::Router;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(list_transactions).post(create_transaction))
+        .route("/ai-analyze", axum::routing::post(ai_analyze))
         .route("/:id", get(get_transaction).delete(void_transaction).put(update_transaction))
         .route("/:id/resolve", get(resolve_transaction).post(resolve_transaction))
         .route("/:id/reject", get(reject_transaction).post(reject_transaction))

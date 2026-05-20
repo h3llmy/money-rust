@@ -54,7 +54,7 @@ pub async fn run(config: Config) {
         pocket_repo.clone(),
         category_repo.clone(),
         transaction_service.clone(),
-        ai_client,
+        ai_client.clone(),
     ));
     let auth_service = Arc::new(AuthService::new(auth_repo.clone(), config.jwt_secret.clone()));
 
@@ -64,6 +64,7 @@ pub async fn run(config: Config) {
         category_service,
         transaction_service,
         auth_service,
+        ai_client: ai_client.clone(),
         jwt_secret: config.jwt_secret.clone(),
     });
 

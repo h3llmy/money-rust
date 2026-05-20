@@ -194,4 +194,50 @@ impl AiClient for OllamaClient {
 
         Ok(Some(parsed))
     }
+
+    async fn analyze_transactions(
+        &self,
+        transactions_json: &str,
+        user_query: Option<&str>,
+    ) -> Result<String, String> {
+        let system_prompt = "You are an expert personal finance AI assistant. Analyze the user's transactions provided in JSON format and respond to their query. Provide rich, actionable, and visually appealing financial analysis, breakdown of spending/income patterns, and personalized recommendations. Use clean and well-structured Markdown.";
+        let query = user_query.unwrap_or("Analyze my transactions, provide an overview of my financial status, spending habits, and actionable recommendations.");
+
+        let request = OllamaChatRequest {
+            model: self.config.ollama_model.clone(),
+            messages: vec![
+                ChatMessage { role: "system".to_string(), content: system_prompt.to_string() },
+                ChatMessage { role: "user".to_string(), content: format!("Transactions JSON:\n{}\n\nUser Query: {}", transactions_json, query) },
+            ],
+            tools: vec![],
+            stream: false,
+        };
+
+        let url = format!("{}/api/chat", self.config.ollama_host);
+        
+        let res = self.client.post(&url)
+            .header("User-Agent", "MobileMoneyBackend/1.0")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            return Err(format!("Ollama API error ({}): {}", status, err_text));
+        }
+
+        #[derive(Deserialize)]
+        struct SimpleAssistantMessage {
+            content: String,
+        }
+        #[derive(Deserialize)]
+        struct SimpleOllamaChatResponse {
+            message: SimpleAssistantMessage,
+        }
+
+        let body: SimpleOllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
+        Ok(body.message.content)
+    }
 }

@@ -23,4 +23,10 @@ pub trait AiClient: Send + Sync {
         title: &str,
         body: &str,
     ) -> Result<Option<AiParsedNotification>, String>;
+
+    async fn analyze_transactions(
+        &self,
+        transactions_json: &str,
+        user_query: Option<&str>,
+    ) -> Result<String, String>;
 }
