@@ -102,3 +102,13 @@ pub struct ResolveTransactionRequest {
     pub destination_pocket_id: Option<Uuid>,
     pub description: Option<String>,
 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct AiAnalyzeRequest {
+    pub query: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AiAnalyzeResponse {
+    pub analysis: String,
+}

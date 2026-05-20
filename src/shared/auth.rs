@@ -21,7 +21,7 @@ where
     S: Send + Sync,
     Arc<AppState>: FromRef<S>,
 {
-    type Rejection = (StatusCode, String);
+    type Rejection = crate::shared::error::AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         // 1. Get State reference
@@ -31,20 +31,32 @@ where
         let auth_header = parts.headers
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing authorization header".to_string()))?;
+            .ok_or_else(|| crate::shared::error::AppError {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Missing authorization header".to_string(),
+            })?;
 
         if !auth_header.starts_with("Bearer ") {
-            return Err((StatusCode::UNAUTHORIZED, "Invalid authorization header format".to_string()));
+            return Err(crate::shared::error::AppError {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Invalid authorization header format".to_string(),
+            });
         }
 
         let token = &auth_header[7..];
 
         // 3. Decode and validate the token
         let claims = decode_token(token, &state.jwt_secret)
-            .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+            .map_err(|e| crate::shared::error::AppError {
+                status: StatusCode::UNAUTHORIZED,
+                message: e,
+            })?;
 
         let user_id = Uuid::parse_str(&claims.sub)
-            .map_err(|e| (StatusCode::UNAUTHORIZED, format!("Invalid user ID in token: {}", e)))?;
+            .map_err(|e| crate::shared::error::AppError {
+                status: StatusCode::UNAUTHORIZED,
+                message: format!("Invalid user ID in token: {}", e),
+            })?;
 
         Ok(AuthUser {
             id: user_id,

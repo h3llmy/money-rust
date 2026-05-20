@@ -14,6 +14,7 @@ use crate::domain::notifications::dto::*;
 use crate::domain::auth::dto::*;
 use crate::shared::response::*;
 use crate::shared::pagination::*;
+use crate::shared::error::ErrorResponse;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -34,6 +35,7 @@ use crate::shared::pagination::*;
         handlers::transactions::void_transaction,
         handlers::transactions::resolve_transaction,
         handlers::transactions::reject_transaction,
+        handlers::transactions::ai_analyze,
         handlers::notifications::list_unresolved,
         handlers::notifications::sync_inbox,
         handlers::auth::register,
@@ -45,11 +47,13 @@ use crate::shared::pagination::*;
             PocketResponse, CreatePocketRequest, UpdatePocketRequest,
             CategoryResponse, CreateCategoryRequest, UpdateCategoryRequest,
             TransactionResponse, CreateTransactionRequest, UpdateTransactionRequest, ResolveTransactionRequest,
+            AiAnalyzeRequest, AiAnalyzeResponse,
             CreateNotificationRequest, NotificationResponse,
             StringApiResponse, PocketApiResponse, CategoryApiResponse, TransactionApiResponse, NotificationApiResponse,
             PocketPaginationResponse, CategoryPaginationResponse, TransactionPaginationResponse, NotificationPaginationResponse,
             PaginationQuery, SortOrder,
-            RegisterRequest, LoginRequest, AuthResponse, UserResponse
+            RegisterRequest, LoginRequest, AuthResponse, UserResponse,
+            ErrorResponse
         )
     ),
     modifiers(&SecurityAddon),

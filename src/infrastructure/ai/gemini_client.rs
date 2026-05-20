@@ -229,4 +229,71 @@ impl AiClient for GeminiClient {
 
         Ok(Some(parsed))
     }
+
+    async fn analyze_transactions(
+        &self,
+        transactions_json: &str,
+        user_query: Option<&str>,
+    ) -> Result<String, String> {
+        let system_prompt = "You are an expert personal finance AI assistant. Analyze the user's transactions provided in JSON format and respond to their query. Provide rich, actionable, and visually appealing financial analysis, breakdown of spending/income patterns, and personalized recommendations. Use clean and well-structured Markdown.";
+        let query = user_query.unwrap_or("Analyze my transactions, provide an overview of my financial status, spending habits, and actionable recommendations.");
+
+        let request = GeminiRequest {
+            system_instruction: Content {
+                role: None,
+                parts: vec![Part { text: Some(system_prompt.to_string()), function_call: None }],
+            },
+            contents: vec![Content {
+                role: Some("user".to_string()),
+                parts: vec![Part { 
+                    text: Some(format!("Transactions JSON:\n{}\n\nUser Query: {}", transactions_json, query)),
+                    function_call: None 
+                }],
+            }],
+            tools: vec![],
+            tool_config: None,
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.config.gemini_model, self.config.gemini_api_key
+        );
+        
+        let res = self.client.post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            return Err(format!("Gemini API error ({}): {}", status, err_text));
+        }
+
+        #[derive(Deserialize)]
+        struct SimplePart {
+            text: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct SimpleContent {
+            parts: Vec<SimplePart>,
+        }
+        #[derive(Deserialize)]
+        struct SimpleCandidate {
+            content: SimpleContent,
+        }
+        #[derive(Deserialize)]
+        struct SimpleGeminiResponse {
+            candidates: Option<Vec<SimpleCandidate>>,
+        }
+
+        let body: SimpleGeminiResponse = res.json().await.map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+        let candidates = body.candidates.unwrap_or_default();
+        let first_candidate = candidates.into_iter().next().ok_or_else(|| "No candidates returned by Gemini".to_string())?;
+        let part = first_candidate.content.parts.into_iter().next().ok_or_else(|| "No part returned by Gemini".to_string())?;
+        
+        part.text.ok_or_else(|| "No text returned by Gemini".to_string())
+    }
 }
