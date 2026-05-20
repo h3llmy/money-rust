@@ -167,6 +167,7 @@ impl NotificationService {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn process_notification(&self, user_id: Uuid, id: Uuid) -> Result<(), String> {
         let notification = self.repo.find_by_id(id).await?
             .ok_or_else(|| "Notification not found".to_string())?;
