@@ -234,7 +234,7 @@ impl AiClient for GeminiClient {
         &self,
         transactions_json: &str,
         user_query: Option<&str>,
-    ) -> Result<String, String> {
+    ) -> Result<futures_util::stream::BoxStream<'static, Result<String, String>>, String> {
         let system_prompt = "You are an expert personal finance AI assistant. Analyze the user's transactions provided in JSON format and respond to their query. Provide rich, actionable, and visually appealing financial analysis, breakdown of spending/income patterns, and personalized recommendations. Use clean and well-structured Markdown.";
         let query = user_query.unwrap_or("Analyze my transactions, provide an overview of my financial status, spending habits, and actionable recommendations.");
 
@@ -255,7 +255,7 @@ impl AiClient for GeminiClient {
         };
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             self.config.gemini_model, self.config.gemini_api_key
         );
         
@@ -272,28 +272,68 @@ impl AiClient for GeminiClient {
             return Err(format!("Gemini API error ({}): {}", status, err_text));
         }
 
-        #[derive(Deserialize)]
-        struct SimplePart {
-            text: Option<String>,
-        }
-        #[derive(Deserialize)]
-        struct SimpleContent {
-            parts: Vec<SimplePart>,
-        }
-        #[derive(Deserialize)]
-        struct SimpleCandidate {
-            content: SimpleContent,
-        }
-        #[derive(Deserialize)]
-        struct SimpleGeminiResponse {
-            candidates: Option<Vec<SimpleCandidate>>,
-        }
+        let stream = futures_util::stream::unfold((res.bytes_stream(), String::new()), |(mut byte_stream, mut buffer)| async move {
+            use futures_util::StreamExt;
+            loop {
+                if let Some(pos) = buffer.find("\n\n") {
+                    let chunk = buffer[..pos].to_string();
+                    buffer = buffer[pos+2..].to_string();
+                    
+                    if chunk.starts_with("data: ") {
+                        let json_str = &chunk[6..];
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            if let Some(candidates) = parsed.get("candidates").and_then(|c| c.as_array()) {
+                                if let Some(first) = candidates.first() {
+                                    if let Some(parts) = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                                        if let Some(part) = parts.first() {
+                                            if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                                if !text.is_empty() {
+                                                    return Some((Ok(text.to_string()), (byte_stream, buffer)));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
 
-        let body: SimpleGeminiResponse = res.json().await.map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
-        let candidates = body.candidates.unwrap_or_default();
-        let first_candidate = candidates.into_iter().next().ok_or_else(|| "No candidates returned by Gemini".to_string())?;
-        let part = first_candidate.content.parts.into_iter().next().ok_or_else(|| "No part returned by Gemini".to_string())?;
-        
-        part.text.ok_or_else(|| "No text returned by Gemini".to_string())
+                match byte_stream.next().await {
+                    Some(Ok(bytes)) => {
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            buffer.push_str(s);
+                        }
+                    },
+                    Some(Err(e)) => return Some((Err(e.to_string()), (byte_stream, buffer))),
+                    None => {
+                        if !buffer.is_empty() && buffer.starts_with("data: ") {
+                            let json_str = &buffer[6..];
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                if let Some(candidates) = parsed.get("candidates").and_then(|c| c.as_array()) {
+                                    if let Some(first) = candidates.first() {
+                                        if let Some(parts) = first.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                                            if let Some(part) = parts.first() {
+                                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                                    if !text.is_empty() {
+                                                        buffer.clear();
+                                                        return Some((Ok(text.to_string()), (byte_stream, buffer)));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                }
+            }
+        });
+
+        use futures_util::StreamExt;
+        Ok(stream.boxed())
     }
 }

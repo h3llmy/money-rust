@@ -8,6 +8,7 @@ struct OllamaChatRequest {
     messages: Vec<ChatMessage>,
     tools: Vec<Tool>,
     stream: bool,
+    think: bool,
 }
 
 #[derive(Serialize)]
@@ -142,6 +143,7 @@ impl AiClient for OllamaClient {
             ],
             tools,
             stream: false,
+            think: false,
         };
 
         let url = format!("{}/api/chat", self.config.ollama_host);
@@ -199,7 +201,7 @@ impl AiClient for OllamaClient {
         &self,
         transactions_json: &str,
         user_query: Option<&str>,
-    ) -> Result<String, String> {
+    ) -> Result<futures_util::stream::BoxStream<'static, Result<String, String>>, String> {
         let system_prompt = "You are an expert personal finance AI assistant. Analyze the user's transactions provided in JSON format and respond to their query. Provide rich, actionable, and visually appealing financial analysis, breakdown of spending/income patterns, and personalized recommendations. Use clean and well-structured Markdown.";
         let query = user_query.unwrap_or("Analyze my transactions, provide an overview of my financial status, spending habits, and actionable recommendations.");
 
@@ -210,7 +212,8 @@ impl AiClient for OllamaClient {
                 ChatMessage { role: "user".to_string(), content: format!("Transactions JSON:\n{}\n\nUser Query: {}", transactions_json, query) },
             ],
             tools: vec![],
-            stream: false,
+            stream: true,
+            think: false,
         };
 
         let url = format!("{}/api/chat", self.config.ollama_host);
@@ -228,16 +231,54 @@ impl AiClient for OllamaClient {
             return Err(format!("Ollama API error ({}): {}", status, err_text));
         }
 
-        #[derive(Deserialize)]
-        struct SimpleAssistantMessage {
-            content: String,
-        }
-        #[derive(Deserialize)]
-        struct SimpleOllamaChatResponse {
-            message: SimpleAssistantMessage,
-        }
+        let stream = futures_util::stream::unfold((res.bytes_stream(), String::new()), |(mut byte_stream, mut buffer)| async move {
+            use futures_util::StreamExt;
+            loop {
+                if let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos+1..].to_string();
+                    
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                        if let Some(message) = parsed.get("message") {
+                            if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                if !content.is_empty() {
+                                    return Some((Ok(content.to_string()), (byte_stream, buffer)));
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
 
-        let body: SimpleOllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
-        Ok(body.message.content)
+                match byte_stream.next().await {
+                    Some(Ok(bytes)) => {
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            buffer.push_str(s);
+                        }
+                    },
+                    Some(Err(e)) => return Some((Err(e.to_string()), (byte_stream, buffer))),
+                    None => {
+                        if !buffer.is_empty() {
+                            let content = buffer.clone();
+                            buffer.clear();
+                            // Optional: one last check if there's any JSON in the buffer
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                                if let Some(message) = parsed.get("message") {
+                                    if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                        if !content.is_empty() {
+                                            return Some((Ok(content.to_string()), (byte_stream, buffer)));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                }
+            }
+        });
+
+        use futures_util::StreamExt;
+        Ok(stream.boxed())
     }
 }

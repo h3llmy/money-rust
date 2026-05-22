@@ -381,7 +381,7 @@ use crate::domain::transactions::dto::{AiAnalyzeRequest, AiAnalyzeResponse};
     path = "/api/v1/transactions/ai-analyze",
     request_body = AiAnalyzeRequest,
     responses(
-        (status = 200, description = "Perform AI transaction analysis", body = AiAnalyzeResponse),
+        (status = 200, description = "Perform AI transaction analysis (SSE Stream)"),
         (status = 400, description = "Bad Request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 502, description = "Bad Gateway", body = ErrorResponse),
@@ -396,7 +396,7 @@ pub async fn ai_analyze(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Json(payload): Json<AiAnalyzeRequest>,
-) -> Result<Json<AiAnalyzeResponse>, AppError> {
+) -> Result<axum::response::sse::Sse<impl futures_util::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, AppError> {
     let pagination = PaginationQuery {
         page: Some(1),
         limit: Some(200), // Get up to 200 transactions
@@ -424,12 +424,20 @@ pub async fn ai_analyze(
     let transactions_json = serde_json::to_string_pretty(&response_data)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let analysis = state.ai_client
+    let stream = state.ai_client
         .analyze_transactions(&transactions_json, payload.query.as_deref())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
 
-    Ok(Json(AiAnalyzeResponse { analysis }))
+    use futures_util::StreamExt;
+    let sse_stream = stream.map(|chunk_res| {
+        match chunk_res {
+            Ok(text) => Ok(axum::response::sse::Event::default().data(text)),
+            Err(e) => Ok(axum::response::sse::Event::default().event("error").data(e)),
+        }
+    });
+
+    Ok(axum::response::sse::Sse::new(sse_stream).keep_alive(axum::response::sse::KeepAlive::new()))
 }
 
 use axum::routing::get;

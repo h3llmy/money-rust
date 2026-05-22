@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use futures_util::stream::BoxStream;
 use bigdecimal::BigDecimal;
 
 pub mod ollama_client;
@@ -28,5 +29,5 @@ pub trait AiClient: Send + Sync {
         &self,
         transactions_json: &str,
         user_query: Option<&str>,
-    ) -> Result<String, String>;
+    ) -> Result<BoxStream<'static, Result<String, String>>, String>;
 }
