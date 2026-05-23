@@ -161,9 +161,10 @@ impl AiClient for OllamaClient {
             return Err(format!("Ollama API error ({}): {}", status, err_text));
         }
 
-        tracing::info!("Ollama response: {:#?}", res);
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Ollama parse_notification response: {}", text);
 
-        let body: OllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
+        let body: OllamaChatResponse = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         
         let tool_call_opt = body.message.tool_calls
             .and_then(|calls| calls.into_iter().find(|c| c.function.name == "extract_transaction"));
@@ -255,7 +256,10 @@ impl AiClient for OllamaClient {
             return Err(format!("Ollama API error ({}): {}", status, err_text));
         }
 
-        let body: OllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Ollama parse_transaction_query response: {}", text);
+
+        let body: OllamaChatResponse = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         
         let tool_call_opt = body.message.tool_calls
             .and_then(|calls| calls.into_iter().find(|c| c.function.name == "query_transactions"));

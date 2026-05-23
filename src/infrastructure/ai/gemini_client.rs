@@ -189,7 +189,10 @@ impl AiClient for GeminiClient {
             return Err(format!("Gemini API error ({}): {}", status, err_text));
         }
 
-        let body: GeminiResponse = res.json().await.map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Gemini parse_notification response: {}", text);
+
+        let body: GeminiResponse = serde_json::from_str(&text).map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
         
         let candidates = body.candidates.unwrap_or_default();
         let first_candidate = candidates.into_iter().next().ok_or_else(|| "No candidates returned by Gemini".to_string())?;
@@ -298,7 +301,10 @@ impl AiClient for GeminiClient {
             return Err(format!("Gemini API error ({}): {}", res.status(), res.text().await.unwrap_or_default()));
         }
 
-        let body: GeminiResponse = res.json().await.map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Gemini parse_transaction_query response: {}", text);
+
+        let body: GeminiResponse = serde_json::from_str(&text).map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
         let candidates = body.candidates.unwrap_or_default();
         let first_candidate = candidates.into_iter().next().ok_or_else(|| "No candidates returned by Gemini".to_string())?;
         
