@@ -178,6 +178,7 @@ impl AiClient for GeminiClient {
         
         let res = self.client.post(&url)
             .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(15))
             .json(&request)
             .send()
             .await
@@ -292,6 +293,7 @@ impl AiClient for GeminiClient {
         
         let res = self.client.post(&url)
             .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(15))
             .json(&request)
             .send()
             .await

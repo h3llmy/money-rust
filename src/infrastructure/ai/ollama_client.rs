@@ -150,6 +150,7 @@ impl AiClient for OllamaClient {
         
         let res = self.client.post(&url)
             .header("User-Agent", "MobileMoneyBackend/1.0")
+            .timeout(std::time::Duration::from_secs(15))
             .json(&request)
             .send()
             .await
@@ -245,6 +246,7 @@ impl AiClient for OllamaClient {
         
         let res = self.client.post(&url)
             .header("User-Agent", "MobileMoneyBackend/1.0")
+            .timeout(std::time::Duration::from_secs(15))
             .json(&request)
             .send()
             .await
