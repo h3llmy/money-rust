@@ -397,35 +397,8 @@ pub async fn ai_analyze(
     auth_user: AuthUser,
     Json(payload): Json<AiAnalyzeRequest>,
 ) -> Result<axum::response::sse::Sse<impl futures_util::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, AppError> {
-    let pagination = PaginationQuery {
-        page: Some(1),
-        limit: Some(200), // Get up to 200 transactions
-        search: None,
-        sort: None,
-        sort_order: None,
-    };
-
-    let (data, _) = state.transaction_service
-        .list_transactions(
-            auth_user.id,
-            None,
-            None,
-            None,
-            None,
-            pagination
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-
-    let response_data = data.into_iter()
-        .map(TransactionResponse::from)
-        .collect::<Vec<_>>();
-
-    let transactions_json = serde_json::to_string_pretty(&response_data)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let stream = state.ai_client
-        .analyze_transactions(&transactions_json, payload.query.as_deref())
+    let stream = state.transaction_service
+        .ai_analyze(auth_user.id, payload.query.as_deref())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
 

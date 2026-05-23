@@ -230,6 +230,92 @@ impl AiClient for GeminiClient {
         Ok(Some(parsed))
     }
 
+    async fn parse_transaction_query(
+        &self,
+        query: &str,
+        current_date: &str,
+    ) -> Result<crate::infrastructure::ai::AiTransactionQuery, String> {
+        let system_prompt = format!(
+            "You are a financial query parser. Parse the user's request and extract filtering parameters for querying a transaction database.\n\
+            Current date and time is {}.\n\
+            Extract start_date, end_date (in ISO 8601 format, e.g. 2026-05-01T00:00:00Z), category_name, pocket_name, transaction_type (income, expense, transfer), and limit (number).\n\
+            If no specific date is mentioned, do not provide dates. E.g. 'last month', 'this week', 'yesterday' should be translated to exact ISO 8601 bounds.",
+            current_date
+        );
+
+        let tools = vec![Tool {
+            function_declarations: vec![FunctionDeclaration {
+                name: "query_transactions".to_string(),
+                description: "Filter transactions based on user query".to_string(),
+                parameters: serde_json::json!({
+                    "type": "OBJECT",
+                    "properties": {
+                        "pocket_name": { "type": "STRING", "description": "Pocket or wallet name (e.g. Gopay, Jago)" },
+                        "category_name": { "type": "STRING", "description": "Category name (e.g. Food, Transport)" },
+                        "start_date": { "type": "STRING", "description": "Start date in ISO 8601 (e.g. 2026-05-01T00:00:00Z)" },
+                        "end_date": { "type": "STRING", "description": "End date in ISO 8601 (e.g. 2026-05-31T23:59:59Z)" },
+                        "transaction_type": { "type": "STRING", "description": "Must be 'income', 'expense', or 'transfer'" },
+                        "limit": { "type": "INTEGER", "description": "Number of transactions to return" }
+                    }
+                }),
+            }],
+        }];
+
+        let request = GeminiRequest {
+            system_instruction: Content {
+                role: None,
+                parts: vec![Part { text: Some(system_prompt), function_call: None }],
+            },
+            contents: vec![Content {
+                role: Some("user".to_string()),
+                parts: vec![Part { 
+                    text: Some(query.to_string()),
+                    function_call: None 
+                }],
+            }],
+            tools,
+            tool_config: Some(ToolConfig {
+                function_calling_config: FunctionCallingConfig {
+                    mode: "ANY".to_string(),
+                    allowed_function_names: vec!["query_transactions".to_string()],
+                }
+            })
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.config.gemini_model, self.config.gemini_api_key
+        );
+        
+        let res = self.client.post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            return Err(format!("Gemini API error ({}): {}", res.status(), res.text().await.unwrap_or_default()));
+        }
+
+        let body: GeminiResponse = res.json().await.map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+        let candidates = body.candidates.unwrap_or_default();
+        let first_candidate = candidates.into_iter().next().ok_or_else(|| "No candidates returned by Gemini".to_string())?;
+        
+        let function_call_opt = first_candidate.content.parts.into_iter()
+            .find_map(|p| p.function_call);
+
+        let function_call = match function_call_opt {
+            Some(call) => call,
+            None => return Ok(crate::infrastructure::ai::AiTransactionQuery::default()),
+        };
+
+        let parsed: crate::infrastructure::ai::AiTransactionQuery = serde_json::from_value(function_call.args)
+            .map_err(|e| format!("Failed to parse tool args: {}", e))?;
+
+        Ok(parsed)
+    }
+
     async fn analyze_transactions(
         &self,
         transactions_json: &str,

@@ -49,7 +49,12 @@ pub async fn run(config: Config) {
     // Services
     let pocket_service = Arc::new(PocketService::new(pocket_repo.clone()));
     let category_service = Arc::new(CategoryService::new(category_repo.clone()));
-    let transaction_service = Arc::new(TransactionService::new(transaction_repo.clone(), pocket_repo.clone()));
+    let transaction_service = Arc::new(TransactionService::new(
+        transaction_repo.clone(),
+        pocket_repo.clone(),
+        category_repo.clone(),
+        ai_client.clone(),
+    ));
     let notification_service = Arc::new(NotificationService::new(
         notification_repo.clone(),
         pocket_repo.clone(),

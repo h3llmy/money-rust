@@ -1,6 +1,8 @@
 use crate::domain::transactions::entity::Transaction;
 use crate::domain::transactions::TransactionRepository;
 use crate::domain::pockets::PocketRepository;
+use crate::domain::categories::CategoryRepository;
+use crate::infrastructure::ai::AiClient;
 use crate::shared::pagination::PaginationQuery;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -10,11 +12,18 @@ use bigdecimal::BigDecimal;
 pub struct TransactionService {
     repo: Arc<dyn TransactionRepository>,
     pocket_repo: Arc<dyn PocketRepository>,
+    category_repo: Arc<dyn CategoryRepository>,
+    ai_client: Arc<dyn AiClient>,
 }
 
 impl TransactionService {
-    pub fn new(repo: Arc<dyn TransactionRepository>, pocket_repo: Arc<dyn PocketRepository>) -> Self {
-        Self { repo, pocket_repo }
+    pub fn new(
+        repo: Arc<dyn TransactionRepository>,
+        pocket_repo: Arc<dyn PocketRepository>,
+        category_repo: Arc<dyn CategoryRepository>,
+        ai_client: Arc<dyn AiClient>,
+    ) -> Self {
+        Self { repo, pocket_repo, category_repo, ai_client }
     }
 
     pub async fn list_transactions(
@@ -358,5 +367,95 @@ impl TransactionService {
 
         tx.status = "rejected".to_string();
         self.repo.save(tx).await
+    }
+
+    pub async fn ai_analyze(
+        &self,
+        user_id: Uuid,
+        user_query: Option<&str>,
+    ) -> Result<futures_util::stream::BoxStream<'static, Result<String, String>>, String> {
+        // 1. Get query parameters from AI if query is provided
+        let (pocket_id, category_id, start_date, end_date, type_, limit) = if let Some(q) = user_query {
+            let current_date = Utc::now().to_rfc3339();
+            let ai_query = self.ai_client.parse_transaction_query(q, &current_date).await.unwrap_or_default();
+            
+            let mut p_id = None;
+            if let Some(p_name) = ai_query.pocket_name {
+                let (pockets, _) = self.pocket_repo.find_all(user_id, PaginationQuery { limit: Some(100), ..Default::default() }).await?;
+                p_id = pockets.iter().find(|p| p.name.to_lowercase().contains(&p_name.to_lowercase())).map(|p| p.id);
+            }
+            
+            let mut c_id = None;
+            if let Some(c_name) = ai_query.category_name {
+                let (cats, _) = self.category_repo.find_all(user_id, PaginationQuery { limit: Some(100), ..Default::default() }).await?;
+                c_id = cats.iter().find(|c| c.name.to_lowercase().contains(&c_name.to_lowercase())).map(|c| c.id);
+            }
+            
+            let start = ai_query.start_date.and_then(|d| DateTime::parse_from_rfc3339(&d).ok().map(|dt| dt.with_timezone(&Utc)));
+            let end = ai_query.end_date.and_then(|d| DateTime::parse_from_rfc3339(&d).ok().map(|dt| dt.with_timezone(&Utc)));
+            
+            (p_id, c_id, start, end, ai_query.transaction_type, ai_query.limit)
+        } else {
+            (None, None, None, None, None, None)
+        };
+
+        // 2. Fetch transactions based on filter
+        let pagination = PaginationQuery {
+            page: Some(1),
+            limit: Some(limit.unwrap_or(200)),
+            search: None,
+            sort: None,
+            sort_order: None,
+        };
+
+        let (mut data, _) = self.list_transactions(user_id, pocket_id, start_date, end_date, type_, pagination).await?;
+        
+        // Post-filter by category_id if needed
+        if let Some(cid) = category_id {
+            data.retain(|t| t.category_id == Some(cid));
+        }
+
+        // Fetch pockets and categories to populate names
+        let (pockets_list, _) = self.pocket_repo.find_all(user_id, PaginationQuery { limit: Some(1000), ..Default::default() }).await?;
+        let (categories_list, _) = self.category_repo.find_all(user_id, PaginationQuery { limit: Some(1000), ..Default::default() }).await?;
+        
+        let pockets_map: std::collections::HashMap<Uuid, crate::domain::pockets::dto::PocketResponse> = pockets_list
+            .into_iter()
+            .map(|p| (p.id, crate::domain::pockets::dto::PocketResponse::from(p)))
+            .collect();
+            
+        let categories_map: std::collections::HashMap<Uuid, crate::domain::categories::dto::CategoryResponse> = categories_list
+            .into_iter()
+            .map(|c| (c.id, crate::domain::categories::dto::CategoryResponse::from(c)))
+            .collect();
+
+        let mut populated_data = Vec::new();
+        for t in data {
+            let pocket = pockets_map.get(&t.pocket_id).cloned();
+            let category = t.category_id.and_then(|cid| categories_map.get(&cid).cloned());
+            let destination_pocket = t.destination_pocket_id.and_then(|dpid| pockets_map.get(&dpid).cloned());
+
+            populated_data.push(crate::domain::transactions::dto::TransactionResponse {
+                id: t.id,
+                pocket_id: t.pocket_id,
+                pocket,
+                category_id: t.category_id,
+                category,
+                amount: t.amount.to_string(),
+                type_: t.type_,
+                title: t.title,
+                transaction_time: t.transaction_time,
+                destination_pocket_id: t.destination_pocket_id,
+                destination_pocket,
+                description: t.description,
+                status: t.status,
+            });
+        }
+
+        let transactions_json = serde_json::to_string_pretty(&populated_data)
+            .map_err(|e| e.to_string())?;
+
+        // 3. Call AI to analyze
+        self.ai_client.analyze_transactions(&transactions_json, user_query).await
     }
 }

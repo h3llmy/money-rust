@@ -17,6 +17,16 @@ pub struct AiParsedNotification {
     pub destination_pocket: Option<String>,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+pub struct AiTransactionQuery {
+    pub pocket_name: Option<String>,
+    pub category_name: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub transaction_type: Option<String>,
+    pub limit: Option<u32>,
+}
+
 #[async_trait]
 pub trait AiClient: Send + Sync {
     async fn parse_notification(
@@ -24,6 +34,12 @@ pub trait AiClient: Send + Sync {
         title: &str,
         body: &str,
     ) -> Result<Option<AiParsedNotification>, String>;
+
+    async fn parse_transaction_query(
+        &self,
+        query: &str,
+        current_date: &str,
+    ) -> Result<AiTransactionQuery, String>;
 
     async fn analyze_transactions(
         &self,
