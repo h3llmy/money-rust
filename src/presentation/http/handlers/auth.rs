@@ -1,7 +1,7 @@
 use axum::{extract::State, Json, http::StatusCode};
 use crate::shared::app_state::AppState;
 use crate::shared::auth::AuthUser;
-use crate::domain::auth::dto::{RegisterRequest, LoginRequest, AuthResponse, UserResponse};
+use crate::domain::auth::dto::{RegisterRequest, LoginRequest, AuthResponse, UserResponse, RefreshRequest};
 use crate::shared::error::AppError;
 use std::sync::Arc;
 use validator::Validate;
@@ -57,6 +57,31 @@ pub async fn login(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    request_body = RefreshRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = AuthResponse),
+        (status = 400, description = "Invalid token", body = ErrorResponse),
+        (status = 500, description = "Internal Server Error", body = ErrorResponse)
+    ),
+    tag = "Auth"
+)]
+pub async fn refresh(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RefreshRequest>,
+) -> Result<Json<AuthResponse>, AppError> {
+    payload.validate().map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let res = state.auth_service
+        .refresh(&payload.refresh_token)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    Ok(Json(res))
+}
+
+#[utoipa::path(
     get,
     path = "/api/v1/users/me",
     responses(
@@ -90,6 +115,7 @@ pub fn auth_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/refresh", post(refresh))
 }
 
 pub fn user_routes() -> Router<Arc<AppState>> {

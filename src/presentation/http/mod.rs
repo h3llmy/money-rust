@@ -40,6 +40,7 @@ use crate::shared::error::ErrorResponse;
         handlers::notifications::sync_inbox,
         handlers::auth::register,
         handlers::auth::login,
+        handlers::auth::refresh,
         handlers::auth::get_me,
     ),
     components(
@@ -52,7 +53,7 @@ use crate::shared::error::ErrorResponse;
             StringApiResponse, PocketApiResponse, CategoryApiResponse, TransactionApiResponse, NotificationApiResponse,
             PocketPaginationResponse, CategoryPaginationResponse, TransactionPaginationResponse, NotificationPaginationResponse,
             PaginationQuery, SortOrder,
-            RegisterRequest, LoginRequest, AuthResponse, UserResponse,
+            RegisterRequest, LoginRequest, RefreshRequest, AuthResponse, UserResponse,
             ErrorResponse
         )
     ),

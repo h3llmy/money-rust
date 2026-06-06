@@ -8,6 +8,7 @@ struct OllamaChatRequest {
     messages: Vec<ChatMessage>,
     tools: Vec<Tool>,
     stream: bool,
+    think: bool,
 }
 
 #[derive(Serialize)]
@@ -142,12 +143,14 @@ impl AiClient for OllamaClient {
             ],
             tools,
             stream: false,
+            think: false,
         };
 
         let url = format!("{}/api/chat", self.config.ollama_host);
         
         let res = self.client.post(&url)
             .header("User-Agent", "MobileMoneyBackend/1.0")
+            .timeout(std::time::Duration::from_secs(120))
             .json(&request)
             .send()
             .await
@@ -159,9 +162,10 @@ impl AiClient for OllamaClient {
             return Err(format!("Ollama API error ({}): {}", status, err_text));
         }
 
-        tracing::info!("Ollama response: {:#?}", res);
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Ollama parse_notification response: {}", text);
 
-        let body: OllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
+        let body: OllamaChatResponse = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         
         let tool_call_opt = body.message.tool_calls
             .and_then(|calls| calls.into_iter().find(|c| c.function.name == "extract_transaction"));
@@ -195,11 +199,89 @@ impl AiClient for OllamaClient {
         Ok(Some(parsed))
     }
 
+    async fn parse_transaction_query(
+        &self,
+        query: &str,
+        current_date: &str,
+    ) -> Result<crate::infrastructure::ai::AiTransactionQuery, String> {
+        let system_prompt = format!(
+            "You are a financial query parser. Parse the user's request and extract filtering parameters for querying a transaction database.\n\
+            Current date and time is {}.\n\
+            Extract start_date, end_date (in ISO 8601 format, e.g. 2026-05-01T00:00:00Z), category_name, pocket_name, transaction_type (income, expense, transfer), and limit (number).\n\
+            If no specific date is mentioned, do not provide dates. E.g. 'last month', 'this week', 'yesterday' should be translated to exact ISO 8601 bounds.",
+            current_date
+        );
+
+        let tools = vec![Tool {
+            tool_type: "function".to_string(),
+            function: ToolFunction {
+                name: "query_transactions".to_string(),
+                description: "Filter transactions based on user query".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "pocket_name": { "type": "string", "description": "Pocket or wallet name (e.g. Gopay, Jago)" },
+                        "category_name": { "type": "string", "description": "Category name (e.g. Food, Transport)" },
+                        "start_date": { "type": "string", "description": "Start date in ISO 8601 (e.g. 2026-05-01T00:00:00Z)" },
+                        "end_date": { "type": "string", "description": "End date in ISO 8601 (e.g. 2026-05-31T23:59:59Z)" },
+                        "transaction_type": { "type": "string", "description": "Must be 'income', 'expense', or 'transfer'" },
+                        "limit": { "type": "integer", "description": "Number of transactions to return" }
+                    }
+                }),
+            },
+        }];
+
+        let request = OllamaChatRequest {
+            model: self.config.ollama_model.clone(),
+            messages: vec![
+                ChatMessage { role: "system".to_string(), content: system_prompt },
+                ChatMessage { role: "user".to_string(), content: query.to_string() },
+            ],
+            tools,
+            stream: false,
+            think: false,
+        };
+
+        let url = format!("{}/api/chat", self.config.ollama_host);
+        
+        let res = self.client.post(&url)
+            .header("User-Agent", "MobileMoneyBackend/1.0")
+            .timeout(std::time::Duration::from_secs(120))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            return Err(format!("Ollama API error ({}): {}", status, err_text));
+        }
+
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        tracing::info!("Ollama parse_transaction_query response: {}", text);
+
+        let body: OllamaChatResponse = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        
+        let tool_call_opt = body.message.tool_calls
+            .and_then(|calls| calls.into_iter().find(|c| c.function.name == "query_transactions"));
+
+        let tool_call = match tool_call_opt {
+            Some(call) => call,
+            None => return Ok(crate::infrastructure::ai::AiTransactionQuery::default()),
+        };
+
+        let parsed: crate::infrastructure::ai::AiTransactionQuery = serde_json::from_value(tool_call.function.arguments)
+            .map_err(|e| format!("Failed to parse tool arguments: {}", e))?;
+
+        Ok(parsed)
+    }
+
     async fn analyze_transactions(
         &self,
         transactions_json: &str,
         user_query: Option<&str>,
-    ) -> Result<String, String> {
+    ) -> Result<futures_util::stream::BoxStream<'static, Result<String, String>>, String> {
         let system_prompt = "You are an expert personal finance AI assistant. Analyze the user's transactions provided in JSON format and respond to their query. Provide rich, actionable, and visually appealing financial analysis, breakdown of spending/income patterns, and personalized recommendations. Use clean and well-structured Markdown.";
         let query = user_query.unwrap_or("Analyze my transactions, provide an overview of my financial status, spending habits, and actionable recommendations.");
 
@@ -210,7 +292,8 @@ impl AiClient for OllamaClient {
                 ChatMessage { role: "user".to_string(), content: format!("Transactions JSON:\n{}\n\nUser Query: {}", transactions_json, query) },
             ],
             tools: vec![],
-            stream: false,
+            stream: true,
+            think: false,
         };
 
         let url = format!("{}/api/chat", self.config.ollama_host);
@@ -228,16 +311,54 @@ impl AiClient for OllamaClient {
             return Err(format!("Ollama API error ({}): {}", status, err_text));
         }
 
-        #[derive(Deserialize)]
-        struct SimpleAssistantMessage {
-            content: String,
-        }
-        #[derive(Deserialize)]
-        struct SimpleOllamaChatResponse {
-            message: SimpleAssistantMessage,
-        }
+        let stream = futures_util::stream::unfold((res.bytes_stream(), String::new()), |(mut byte_stream, mut buffer)| async move {
+            use futures_util::StreamExt;
+            loop {
+                if let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos+1..].to_string();
+                    
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                        if let Some(message) = parsed.get("message") {
+                            if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                if !content.is_empty() {
+                                    return Some((Ok(content.to_string()), (byte_stream, buffer)));
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
 
-        let body: SimpleOllamaChatResponse = res.json().await.map_err(|e| e.to_string())?;
-        Ok(body.message.content)
+                match byte_stream.next().await {
+                    Some(Ok(bytes)) => {
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            buffer.push_str(s);
+                        }
+                    },
+                    Some(Err(e)) => return Some((Err(e.to_string()), (byte_stream, buffer))),
+                    None => {
+                        if !buffer.is_empty() {
+                            let content = buffer.clone();
+                            buffer.clear();
+                            // Optional: one last check if there's any JSON in the buffer
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                                if let Some(message) = parsed.get("message") {
+                                    if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                        if !content.is_empty() {
+                                            return Some((Ok(content.to_string()), (byte_stream, buffer)));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                }
+            }
+        });
+
+        use futures_util::StreamExt;
+        Ok(stream.boxed())
     }
 }

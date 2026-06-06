@@ -47,7 +47,7 @@ where
         let token = &auth_header[7..];
 
         // 3. Decode and validate the token
-        let claims = decode_token(token, &state.jwt_secret)
+        let claims = decode_token(token, &state.jwt_secret, "access")
             .map_err(|e| crate::shared::error::AppError {
                 status: StatusCode::UNAUTHORIZED,
                 message: e,
