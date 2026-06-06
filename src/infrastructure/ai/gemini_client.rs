@@ -369,9 +369,17 @@ impl AiClient for GeminiClient {
         let stream = futures_util::stream::unfold((res.bytes_stream(), String::new()), |(mut byte_stream, mut buffer)| async move {
             use futures_util::StreamExt;
             loop {
-                if let Some(pos) = buffer.find("\n\n") {
+                let delim = if let Some(pos) = buffer.find("\r\n\r\n") {
+                    Some((pos, 4))
+                } else if let Some(pos) = buffer.find("\n\n") {
+                    Some((pos, 2))
+                } else {
+                    None
+                };
+
+                if let Some((pos, skip)) = delim {
                     let chunk = buffer[..pos].to_string();
-                    buffer = buffer[pos+2..].to_string();
+                    buffer = buffer[pos+skip..].to_string();
                     
                     if chunk.starts_with("data: ") {
                         let json_str = &chunk[6..];
