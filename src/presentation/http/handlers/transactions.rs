@@ -420,20 +420,18 @@ pub async fn reject_transaction(
     }))
 }
 
-#[utoipa::path(
+    #[utoipa::path(
     post,
     path = "/api/v1/transactions/ai-analyze",
     request_body = AiAnalyzeRequest,
     responses(
-        (status = 200, description = "Perform AI transaction analysis (SSE Stream)"),
+        (status = 200, description = "Perform AI transaction analysis (SSE Stream)", body = String, content_type = "text/event-stream"),
         (status = 400, description = "Bad Request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 502, description = "Bad Gateway", body = ErrorResponse),
         (status = 500, description = "Internal Server Error", body = ErrorResponse)
     ),
-    security(
-        ("BearerAuth" = [])
-    ),
+    security(("BearerAuth" = [])),
     tag = "Transactions"
 )]
 pub async fn ai_analyze(
