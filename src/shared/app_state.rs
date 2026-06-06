@@ -1,8 +1,8 @@
-use crate::domain::pockets::service::PocketService;
-use crate::domain::notifications::service::NotificationService;
-use crate::domain::categories::service::CategoryService;
-use crate::domain::transactions::service::TransactionService;
 use crate::domain::auth::service::AuthService;
+use crate::domain::categories::service::CategoryService;
+use crate::domain::notifications::service::NotificationService;
+use crate::domain::pockets::service::PocketService;
+use crate::domain::transactions::service::TransactionService;
 use std::sync::Arc;
 
 pub struct AppState {
@@ -11,7 +11,6 @@ pub struct AppState {
     pub category_service: Arc<CategoryService>,
     pub transaction_service: Arc<TransactionService>,
     pub auth_service: Arc<AuthService>,
-    pub ai_client: Arc<dyn crate::infrastructure::ai::AiClient>,
+    // pub ai_client: Arc<dyn crate::infrastructure::ai::AiClient>,
     pub jwt_secret: String,
 }
-

@@ -24,6 +24,12 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+#[derive(Clone, Deserialize, ToSchema, Validate)]
+pub struct RefreshRequest {
+    #[validate(length(min = 1, message = "Refresh token is required"))]
+    pub refresh_token: String,
+}
+
 #[derive(Clone, Serialize, ToSchema)]
 pub struct UserResponse {
     pub id: Uuid,
@@ -44,5 +50,6 @@ impl From<User> for UserResponse {
 #[derive(Clone, Serialize, ToSchema)]
 pub struct AuthResponse {
     pub token: String,
+    pub refresh_token: String,
     pub user: UserResponse,
 }
